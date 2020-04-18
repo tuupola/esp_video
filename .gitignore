@@ -1,0 +1,6 @@
+sdkconfig
+sdkconfig.old
+build/
+*.raw
+*.mp4
+
