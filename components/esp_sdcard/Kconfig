@@ -1,12 +1,5 @@
 menu "SD card configuration"
 
-config SDCARD_SPI_CLOCK_SPEED_HZ
-    int "SPI clock speed in Hz"
-    default 20000000
-    range 0 80000000
-    help
-        SPI clock speed in Hz. If you have problems try a lower value.
-
 config SDCARD_PIN_MISO
     int "MISO pin number"
     default 2
