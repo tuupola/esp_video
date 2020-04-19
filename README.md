@@ -1,6 +1,6 @@
 ## Videoplayer for ESP32
 
-This is a proof of concept videoplayer which play raw RGB565 files from the SD card. You can convert any video file to correct format with ffmpeg. Currently videos are played without sound.
+This is a proof of concept videoplayer which plays raw RGB565 video files from the SD card. You can convert any video file to raw format with ffmpeg. Currently videos are played without sound.
 
 ![Big Buck Bunny on TTGO T4](https://appelsiini.net/img/2020/bbb-cover-1.jpg)
 
