@@ -39,7 +39,8 @@ The original video is 24 fps. With SPI interface the SD card reading speed seems
 $ ffmpeg -i BigBuckBunny_320x180.mp4 -f rawvideo -pix_fmt rgb565be -vcodec  rawvideo -r 12 bbb12.raw
 ```
 
+## Big Buck Bunny
 
-
-
-
+Copyright (C) 2008 Blender Foundation | peach.blender.org<br>
+Some Rights Reserved. Creative Commons Attribution 3.0 license.<br>
+http://www.bigbuckbunny.org/
