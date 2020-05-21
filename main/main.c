@@ -252,8 +252,13 @@ void infobar_task(void *params)
         swprintf(message, sizeof(message), u"SD %.*f kBPS  ",  1, sd_bps / 1000);
         hagl_put_text(message, 8, 8, color, font6x9);
 
-        swprintf(message, sizeof(message), u"%.*f FPS  ", 1, sd_fps);
-        hagl_put_text(message, DISPLAY_WIDTH - 62, 8, color, font6x9);
+#ifdef CONFIG_ESP_VIDEO_MJPG
+        swprintf(message, sizeof(message), u"MJPG %.*f FPS  ", 1, sd_fps);
+        hagl_put_text(message, DISPLAY_WIDTH - 90, 8, color, font6x9);
+#else
+        swprintf(message, sizeof(message), u"RAW RGB565 %.*f FPS  ", 1, sd_fps);
+        hagl_put_text(message, DISPLAY_WIDTH - 124, 8, color, font6x9);
+#endif
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
 #endif
@@ -303,8 +308,11 @@ void app_main()
 
 #ifdef HAGL_HAL_USE_BUFFERING
     xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 0);
-    // xTaskCreatePinnedToCore(raw_video_task, "Video", 8192, NULL, 1, NULL, 0);
+#ifdef CONFIG_ESP_VIDEO_MJPG
     xTaskCreatePinnedToCore(mjpg_video_task, "Video", 8192, NULL, 1, NULL, 0);
+#else
+    xTaskCreatePinnedToCore(raw_video_task, "Video", 8192, NULL, 1, NULL, 0);
+#endif /* CONFIG_ESP_VIDEO_MJPG */
     //xTaskCreatePinnedToCore(photo_task, "Photo", 8192, NULL, 2, NULL, 1);
 #endif /* HAGL_HAL_USE_BUFFERING */
     xTaskCreatePinnedToCore(infobar_task, "info", 8192, NULL, 2, NULL, 1);

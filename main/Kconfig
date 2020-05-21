@@ -1,0 +1,10 @@
+menu "Video demo configuration"
+    choice
+        prompt "Video format"
+        default ESP_VIDEO_RAW
+        config ESP_VIDEO_RAW
+            bool "RAW RGB565"
+        config ESP_VIDEO_MJPG
+            bool "MJPG"
+    endchoice
+endmenu
