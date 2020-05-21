@@ -33,6 +33,7 @@ SPDX-License-Identifier: MIT-0
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <freertos/event_groups.h>
 #include <esp_log.h>
 #include <esp_task_wdt.h>
 
@@ -56,9 +57,13 @@ static float sd_fps;
 static float sd_bps;
 static bitmap_t *bb;
 
+static EventGroupHandle_t event;
+
+static const uint8_t FRAME_LOADED = (1 << 0);
+static const uint8_t FLUSH_STARTED= (1 << 1);
+
 /*
- * Flush backbuffer to display. This is capped to 30 fps.
- * SD card reading is only 12.5 fps.
+ * Flush backbuffer to display always when new frame is loaded.
  */
 void flush_task(void *params)
 {
@@ -66,29 +71,53 @@ void flush_task(void *params)
     const TickType_t frequency = 1000 / 30 / portTICK_RATE_MS;
 
     while (1) {
-        xSemaphoreTake(mutex, portMAX_DELAY);
-        hagl_flush();
-        xSemaphoreGive(mutex);
-        //fb_fps = fps();
-        vTaskDelayUntil(&last, frequency);
-    }
+        EventBits_t bits = xEventGroupWaitBits(
+            event,
+            FRAME_LOADED,
+            pdTRUE,
+            pdFALSE,
+            0
+        );
 
+        /* Flush only when FRAME_LOADED is set. */
+        if ((bits & FRAME_LOADED) != 0 ) {
+            xEventGroupSetBits(event, FLUSH_STARTED);
+            hagl_flush();
+        }
+    }
 
     vTaskDelete(NULL);
 }
 
 /*
+ * Software vsync. Waits for flush to start. Needed to avoid
+ * tearing when using double buffering, NOP otherwise. This
+ * could be handler with IRQ's if the display supports it.
+ */
+static void wait_for_vsync()
+{
+#ifdef HAGL_HAL_USE_BUFFERING
+    xEventGroupWaitBits(
+        event,
+        FLUSH_STARTED,
+        pdTRUE,
+        pdFALSE,
+        10000 / portTICK_RATE_MS
+    );
+
+    /* Add some leeway for flush so SD card does cath up. */
+    ets_delay_us(4000);
+#endif /* HAGL_HAL_USE_BUFFERING */
+}
+
+/*
  * Read video data from sdcard. This should be capped to video
  * framerate. However currently the sdcard is the bottleneck and
- * data can be read at only about 12 fps.
+ * data can be read at only about 15 fps. Adding vsync causes
+ * fps to drop to 14.
  */
 void video_task(void *params)
 {
-    TickType_t last;
-    const TickType_t frequency = 1000 / 24 / portTICK_RATE_MS;
-
-    last = xTaskGetTickCount();
-
     FILE *fp;
     ssize_t bytes_read = 0;
 
@@ -108,9 +137,14 @@ void video_task(void *params)
             bb->buffer + bb->pitch * 30,
             320 * 180 * 2
         );
+
+        /* Update counters. */
         sd_bps = bps(bytes_read);
         sd_fps = fps();
-        vTaskDelayUntil(&last, frequency);
+
+        /* Notify flush task that frame has been loaded. */
+        xEventGroupSetBits(event, FRAME_LOADED);
+        wait_for_vsync();
     }
 
     vTaskDelete(NULL);
@@ -141,6 +175,8 @@ void app_main()
 {
     ESP_LOGI(TAG, "SDK version: %s", esp_get_idf_version());
     ESP_LOGI(TAG, "Heap when starting: %d", esp_get_free_heap_size());
+
+    event = xEventGroupCreate();
 
     /* Save the backbuffer pointer so we can later read() directly into it. */
     bb = hagl_init();
