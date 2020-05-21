@@ -59,7 +59,6 @@ static bitmap_t *bb;
 static EventGroupHandle_t event;
 
 static const uint8_t FRAME_LOADED = (1 << 0);
-static const uint8_t FLUSH_STARTED= (1 << 1);
 
 /*
  * Flush backbuffer to display always when new frame is loaded.
@@ -72,38 +71,16 @@ void flush_task(void *params)
             FRAME_LOADED,
             pdTRUE,
             pdFALSE,
-            0
+            40 / portTICK_PERIOD_MS
         );
 
         /* Flush only when FRAME_LOADED is set. */
         if ((bits & FRAME_LOADED) != 0 ) {
-            xEventGroupSetBits(event, FLUSH_STARTED);
             hagl_flush();
         }
     }
 
     vTaskDelete(NULL);
-}
-
-/*
- * Software vsync. Waits for flush to start. Needed to avoid
- * tearing when using double buffering, NOP otherwise. This
- * could be handler with IRQ's if the display supports it.
- */
-static void wait_for_vsync()
-{
-#ifdef HAGL_HAL_USE_BUFFERING
-    xEventGroupWaitBits(
-        event,
-        FLUSH_STARTED,
-        pdTRUE,
-        pdFALSE,
-        10000 / portTICK_RATE_MS
-    );
-
-    /* Add some leeway for flush so SD card does catch up. */
-    ets_delay_us(5000);
-#endif /* HAGL_HAL_USE_BUFFERING */
 }
 
 /*
@@ -140,7 +117,9 @@ void video_task(void *params)
 
         /* Notify flush task that frame has been loaded. */
         xEventGroupSetBits(event, FRAME_LOADED);
-        wait_for_vsync();
+
+        /* Add some leeway for flush so SD card does catch up. */
+        ets_delay_us(5000);
     }
 
     vTaskDelete(NULL);
