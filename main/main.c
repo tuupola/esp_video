@@ -85,7 +85,7 @@ void flush_task(void *params)
 
 /*
  * Read video data from sdcard. This should be capped to video
- * framerate. However currently the sdcard is the bottleneck and
+ * framerate. However currently the sd card is the bottleneck and
  * data can be read at only about 15 fps. Adding vsync causes
  * fps to drop to 14.
  */
@@ -125,6 +125,11 @@ void raw_video_task(void *params)
     vTaskDelete(NULL);
 }
 
+/*
+ * TJPGD input function
+ * http://www.elm-chan.org/fsw/tjpgd/en/input.html
+ */
+
 static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
 {
     FILE *fp = (FILE *)decoder->device;
@@ -135,7 +140,6 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
 
     if (buffer) {
         /* Read bytes from input stream. */
-        //bytes_read = (uint16_t)fread(buffer, 1, size, fp);
         bytes_read = read(fileno(fp), buffer, size);
 
         sd_bps = bps(bytes_read);
@@ -149,7 +153,6 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
             ESP_LOGD(TAG, "EOI found at offset: %d", offset);
             ESP_LOGD(TAG, "Rewind %d bytes", rewind);
 
-            //fseek(fp, rewind, SEEK_CUR);
             lseek(fileno(fp), rewind, SEEK_CUR);
             bytes_read += rewind;
         }
@@ -158,7 +161,6 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
         return bytes_read;
     } else {
         /* Skip bytes from input stream. */
-        //bytes_skip = fseek(fp, size, SEEK_CUR) ? 0 : size;
         bytes_skip = 0;
         if (lseek(fileno(fp), size, SEEK_CUR) > 0) {
             bytes_skip = size;
@@ -169,25 +171,35 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
     }
 }
 
+/*
+ * TJPGD output function
+ * http://www.elm-chan.org/fsw/tjpgd/en/output.html
+ */
 static uint16_t tjpgd_data_writer(JDEC* decoder, void* bitmap, JRECT* rectangle)
 {
     uint8_t width = (rectangle->right - rectangle->left) + 1;
     uint8_t height = (rectangle->bottom - rectangle->top) + 1;
 
+    /* Create a HAGL bitmap from uncompressed block. */
     bitmap_t block = {
         .width = width,
         .height = height,
         .depth = DISPLAY_DEPTH,
-        .pitch = width * (DISPLAY_DEPTH / 8),
-        .size =  width * (DISPLAY_DEPTH / 8) * height,
-        .buffer = (uint8_t *)bitmap
     };
 
+    bitmap_init(&block, (uint8_t *)bitmap);
+
+    /* Blit the block to the display. */
     hagl_blit(rectangle->left, rectangle->top + 30, &block);
 
     return 1;
 }
 
+/*
+ * Read video data from sdcard. This should be capped to video
+ * framerate. However currently the ESP32 is the bottleneck and
+ * data can be uncompressed at about 8 fps.
+ */
 void mjpg_video_task(void *params)
 {
     FILE *fp;
