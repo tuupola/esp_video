@@ -33,6 +33,7 @@ SPDX-License-Identifier: MIT-0
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
+#include <freertos/event_groups.h>
 #include <esp_log.h>
 #include <esp_task_wdt.h>
 
@@ -51,28 +52,33 @@ SPDX-License-Identifier: MIT-0
 
 static const char *TAG = "main";
 
-static SemaphoreHandle_t mutex;
 static float sd_fps;
 static float sd_bps;
 static bitmap_t *bb;
 
+static EventGroupHandle_t event;
+
+static const uint8_t FRAME_LOADED = (1 << 0);
+
 /*
- * Flush backbuffer to display. This is capped to 30 fps.
- * SD card reading is only 12.5 fps.
+ * Flush backbuffer to display always when new frame is loaded.
  */
 void flush_task(void *params)
 {
-    TickType_t last = xTaskGetTickCount();
-    const TickType_t frequency = 1000 / 30 / portTICK_RATE_MS;
-
     while (1) {
-        xSemaphoreTake(mutex, portMAX_DELAY);
-        hagl_flush();
-        xSemaphoreGive(mutex);
-        //fb_fps = fps();
-        vTaskDelayUntil(&last, frequency);
-    }
+        EventBits_t bits = xEventGroupWaitBits(
+            event,
+            FRAME_LOADED,
+            pdTRUE,
+            pdFALSE,
+            40 / portTICK_PERIOD_MS
+        );
 
+        /* Flush only when FRAME_LOADED is set. */
+        if ((bits & FRAME_LOADED) != 0 ) {
+            hagl_flush();
+        }
+    }
 
     vTaskDelete(NULL);
 }
@@ -80,15 +86,11 @@ void flush_task(void *params)
 /*
  * Read video data from sdcard. This should be capped to video
  * framerate. However currently the sdcard is the bottleneck and
- * data can be read at only about 12 fps.
+ * data can be read at only about 15 fps. Adding vsync causes
+ * fps to drop to 14.
  */
 void video_task(void *params)
 {
-    TickType_t last;
-    const TickType_t frequency = 1000 / 24 / portTICK_RATE_MS;
-
-    last = xTaskGetTickCount();
-
     FILE *fp;
     ssize_t bytes_read = 0;
 
@@ -108,9 +110,16 @@ void video_task(void *params)
             bb->buffer + bb->pitch * 30,
             320 * 180 * 2
         );
+
+        /* Update counters. */
         sd_bps = bps(bytes_read);
         sd_fps = fps();
-        vTaskDelayUntil(&last, frequency);
+
+        /* Notify flush task that frame has been loaded. */
+        xEventGroupSetBits(event, FRAME_LOADED);
+
+        /* Add some leeway for flush so SD card does catch up. */
+        ets_delay_us(5000);
     }
 
     vTaskDelete(NULL);
@@ -142,6 +151,8 @@ void app_main()
     ESP_LOGI(TAG, "SDK version: %s", esp_get_idf_version());
     ESP_LOGI(TAG, "Heap when starting: %d", esp_get_free_heap_size());
 
+    event = xEventGroupCreate();
+
     /* Save the backbuffer pointer so we can later read() directly into it. */
     bb = hagl_init();
     if (bb) {
@@ -152,15 +163,9 @@ void app_main()
 
     ESP_LOGI(TAG, "Heap after init: %d", esp_get_free_heap_size());
 
-    mutex = xSemaphoreCreateMutex();
-
-    if (NULL != mutex) {
 #ifdef HAGL_HAL_USE_BUFFERING
-        xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 0);
-        xTaskCreatePinnedToCore(video_task, "Video", 8192, NULL, 2, NULL, 1);
-#endif
-        xTaskCreatePinnedToCore(infobar_task, "info", 8192, NULL, 2, NULL, 1);
-    } else {
-        ESP_LOGE(TAG, "No mutex?");
-    }
+    xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(video_task, "Video", 8192, NULL, 2, NULL, 1);
+#endif /* HAGL_HAL_USE_BUFFERING */
+    xTaskCreatePinnedToCore(infobar_task, "info", 8192, NULL, 2, NULL, 1);
 }
