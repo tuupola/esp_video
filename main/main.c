@@ -29,6 +29,7 @@ SPDX-License-Identifier: MIT-0
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <wchar.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -37,16 +38,16 @@ SPDX-License-Identifier: MIT-0
 
 #include <unistd.h>
 
+#include "sdkconfig.h"
+
+#include <hagl_hal.h>
+#include <hagl.h>
 #include <bitmap.h>
-#include <rgb565.h>
-#include <copepod.h>
-#include <copepod_hal.h>
-#include <font8x8.h>
+#include <font6x9.h>
 #include <fps.h>
 #include <bps.h>
 #include <sdcard.h>
 
-#include "sdkconfig.h"
 
 static const char *TAG = "main";
 
@@ -66,7 +67,7 @@ void flush_task(void *params)
 
     while (1) {
         xSemaphoreTake(mutex, portMAX_DELAY);
-        pod_flush();
+        hagl_flush();
         xSemaphoreGive(mutex);
         //fb_fps = fps();
         vTaskDelayUntil(&last, frequency);
@@ -120,15 +121,16 @@ void video_task(void *params)
  */
 void infobar_task(void *params)
 {
-    uint16_t color = rgb565(0, 255, 0);
-    char message[128];
+    uint16_t color = hagl_color(0, 255, 0);
+    char16_t message[64];
 
-#ifdef CONFIG_POD_HAL_USE_DOUBLE_BUFFERING
+#ifdef HAGL_HAL_USE_BUFFERING
     while (1) {
-        sprintf(message, "%.*f kBPS  ", 1, sd_bps / 1000);
-        pod_put_text(message, 8, 8, color, font8x8);
-        sprintf(message, "%.*f FPS  ", 1, sd_fps);
-        pod_put_text(message, DISPLAY_WIDTH - 72, 8, color, font8x8);
+        swprintf(message, sizeof(message), u"SD %.*f kBPS  ",  1, sd_bps / 1000);
+        hagl_put_text(message, 8, 8, color, font6x9);
+
+        swprintf(message, sizeof(message), u"%.*f FPS  ", 1, sd_fps);
+        hagl_put_text(message, DISPLAY_WIDTH - 62, 8, color, font6x9);
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
 #endif
@@ -141,7 +143,7 @@ void app_main()
     ESP_LOGI(TAG, "Heap when starting: %d", esp_get_free_heap_size());
 
     /* Save the backbuffer pointer so we can later read() directly into it. */
-    bb = pod_init();
+    bb = hagl_init();
     if (bb) {
         ESP_LOGI(TAG, "Back buffer: %dx%dx%d", bb->width, bb->height, bb->depth);
     }
@@ -153,11 +155,11 @@ void app_main()
     mutex = xSemaphoreCreateMutex();
 
     if (NULL != mutex) {
-#ifdef CONFIG_POD_HAL_USE_DOUBLE_BUFFERING
+#ifdef HAGL_HAL_USE_BUFFERING
         xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 0);
         xTaskCreatePinnedToCore(video_task, "Video", 8192, NULL, 2, NULL, 1);
 #endif
-        xTaskCreatePinnedToCore(infobar_task, "info", 4096, NULL, 2, NULL, 1);
+        xTaskCreatePinnedToCore(infobar_task, "info", 8192, NULL, 2, NULL, 1);
     } else {
         ESP_LOGE(TAG, "No mutex?");
     }

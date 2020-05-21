@@ -1,9 +1,6 @@
-[submodule "components/copepod"]
-	path = components/copepod
-	url = git@github.com:tuupola/copepod.git
-[submodule "components/copepod_esp_mipi"]
-	path = components/copepod_esp_mipi
-	url = git@github.com:tuupola/copepod_esp_mipi.git
-[submodule "components/esp_mipi"]
-	path = components/esp_mipi
-	url = git@github.com:tuupola/esp_mipi.git
+[submodule "components/hagl"]
+	path = components/hagl
+	url = https://github.com/tuupola/hagl.git
+[submodule "components/hagl_hal"]
+	path = components/hagl_hal
+	url = git@github.com:tuupola/hagl_esp_mipi.git
