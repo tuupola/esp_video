@@ -43,7 +43,17 @@ With MJPG compressed video ESP32 itself is the bottleneck. With my testing I
 was able to decode at approximately 8 fps. You can create a 8 fps motion jpeg video with the following.
 
 ```
-$ ffmpeg -i bbb-320x180.mp4 -r 8 -an -f mjpeg -q:v 1 -pix_fmt yuvj420p -vcodec mjpeg -force_duplicated_matrix 1 -huffman 0 bbb08.mjpeg
+$ ffmpeg -i BigBuckBunny_320x180.mp4 -r 8 -an -f mjpeg -q:v 1 -pix_fmt yuvj420p -vcodec mjpeg -force_duplicated_matrix 1 -huffman 0 bbb08.mjpeg
+```
+
+There is a reasonable size difference between raw and motion jpeg files.
+
+```
+$ du -h bbb12.raw
+798M	bbb12.raw
+
+$ du -h bbb12.mjpeg
+117M	bbb12.mjpeg
 ```
 
 ## Big Buck Bunny
