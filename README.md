@@ -1,6 +1,6 @@
 ## Videoplayer for ESP32
 
-This is a proof of concept videoplayer which plays raw RGB565 and MJPG video files from the SD card. You can convert any video file to raw format with ffmpeg. Currently videos are played without sound.
+This is a proof of concept videoplayer which plays raw RGB565 and MJPG video files from the SD card. You can convert any video file to to both formats with ffmpeg. Currently videos are played without sound.
 
 ![Big Buck Bunny on TTGO T4](https://appelsiini.net/img/2020/bbb-cover-1.jpg)
 
@@ -39,8 +39,8 @@ The original video is 24 fps. With SPI interface the SD card reading speed seems
 $ ffmpeg -i BigBuckBunny_320x180.mp4 -f rawvideo -pix_fmt rgb565be -vcodec  rawvideo -r 12 bbb12.raw
 ```
 
-With MJPG compressed video ESP32 itself is the bottleneck. With my testing I
-was able to decode at approximately 8 fps. You can create a 8 fps motion jpeg video with the following.
+With motion jpeg video ESP32 itself is the bottleneck. With my testing I
+was able to decode at approximately 8 fps. You can create a 8 fps MJPG video with the following.
 
 ```
 $ ffmpeg -i BigBuckBunny_320x180.mp4 -r 8 -an -f mjpeg -q:v 1 -pix_fmt yuvj420p -vcodec mjpeg -force_duplicated_matrix 1 -huffman 0 bbb08.mjp
@@ -59,7 +59,7 @@ $ du -h bbb08.mjp
  80M	bbb08.mjp
 ```
 
-Code expects to find files `bbb12.raw` and `bbb08.mjp` to be found in the sdcard. You can change which file is played via menuconfig `Component config -> Video demo configuration`.
+Code expects to find files `bbb12.raw` and `bbb08.mjp` in the sdcard. You can change which file is played via menuconfig `Component config -> Video demo configuration`.
 
 ## Big Buck Bunny
 
