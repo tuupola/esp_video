@@ -52,7 +52,6 @@ SPDX-License-Identifier: MIT-0
 
 static const char *TAG = "main";
 
-static SemaphoreHandle_t mutex;
 static float sd_fps;
 static float sd_bps;
 static bitmap_t *bb;
@@ -67,9 +66,6 @@ static const uint8_t FLUSH_STARTED= (1 << 1);
  */
 void flush_task(void *params)
 {
-    TickType_t last = xTaskGetTickCount();
-    const TickType_t frequency = 1000 / 30 / portTICK_RATE_MS;
-
     while (1) {
         EventBits_t bits = xEventGroupWaitBits(
             event,
@@ -105,8 +101,8 @@ static void wait_for_vsync()
         10000 / portTICK_RATE_MS
     );
 
-    /* Add some leeway for flush so SD card does cath up. */
-    ets_delay_us(4000);
+    /* Add some leeway for flush so SD card does catch up. */
+    ets_delay_us(5000);
 #endif /* HAGL_HAL_USE_BUFFERING */
 }
 
@@ -188,15 +184,9 @@ void app_main()
 
     ESP_LOGI(TAG, "Heap after init: %d", esp_get_free_heap_size());
 
-    mutex = xSemaphoreCreateMutex();
-
-    if (NULL != mutex) {
 #ifdef HAGL_HAL_USE_BUFFERING
-        xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 0);
-        xTaskCreatePinnedToCore(video_task, "Video", 8192, NULL, 2, NULL, 1);
-#endif
-        xTaskCreatePinnedToCore(infobar_task, "info", 8192, NULL, 2, NULL, 1);
-    } else {
-        ESP_LOGE(TAG, "No mutex?");
-    }
+    xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(video_task, "Video", 8192, NULL, 2, NULL, 1);
+#endif /* HAGL_HAL_USE_BUFFERING */
+    xTaskCreatePinnedToCore(infobar_task, "info", 8192, NULL, 2, NULL, 1);
 }
