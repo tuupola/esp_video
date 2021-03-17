@@ -245,7 +245,7 @@ void mjpg_video_task(void *params)
 void infobar_task(void *params)
 {
     uint16_t color = hagl_color(0, 255, 0);
-    char16_t message[64];
+    wchar_t message[64];
 
 #ifdef HAGL_HAL_USE_BUFFERING
     while (1) {
