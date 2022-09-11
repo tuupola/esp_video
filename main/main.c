@@ -58,6 +58,11 @@ static hagl_backend_t *display;
 
 static EventGroupHandle_t event;
 
+typedef struct {
+    FILE *fp;
+    const hagl_surface_t *surface;
+} tjpgd_iodev_t;
+
 static const uint8_t FRAME_LOADED = (1 << 0);
 
 /*
@@ -132,7 +137,8 @@ void raw_video_task(void *params)
 
 static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
 {
-    FILE *fp = (FILE *)decoder->device;
+    tjpgd_iodev_t *device = (tjpgd_iodev_t *)decoder->device;
+
     uint16_t bytes_read = 0;
     uint16_t bytes_skip = 0;
     const uint16_t EOI = 0xffd9;
@@ -140,7 +146,7 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
 
     if (buffer) {
         /* Read bytes from input stream. */
-        bytes_read = read(fileno(fp), buffer, size);
+        bytes_read = read(fileno(device->fp), buffer, size);
 
         aps_update(&bps, bytes_read);
 
@@ -153,7 +159,7 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
             ESP_LOGD(TAG, "EOI found at offset: %d", offset);
             ESP_LOGD(TAG, "Rewind %d bytes", rewind);
 
-            lseek(fileno(fp), rewind, SEEK_CUR);
+            lseek(fileno(device->fp), rewind, SEEK_CUR);
             bytes_read += rewind;
         }
 
@@ -162,7 +168,7 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
     } else {
         /* Skip bytes from input stream. */
         bytes_skip = 0;
-        if (lseek(fileno(fp), size, SEEK_CUR) > 0) {
+        if (lseek(fileno(device->fp), size, SEEK_CUR) > 0) {
             bytes_skip = size;
         }
 
@@ -177,6 +183,8 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
  */
 static uint16_t tjpgd_data_writer(JDEC* decoder, void* bitmap, JRECT* rectangle)
 {
+    tjpgd_iodev_t *device = (tjpgd_iodev_t *)decoder->device;
+
     uint8_t width = (rectangle->right - rectangle->left) + 1;
     uint8_t height = (rectangle->bottom - rectangle->top) + 1;
 
@@ -185,12 +193,13 @@ static uint16_t tjpgd_data_writer(JDEC* decoder, void* bitmap, JRECT* rectangle)
         .width = width,
         .height = height,
         .depth = DISPLAY_DEPTH,
+        .pitch = width * (DISPLAY_DEPTH / 8),
+        .size =  width * (DISPLAY_DEPTH / 8) * height,
+        .buffer = (uint8_t *)bitmap
     };
 
-    bitmap_init(&block, (uint8_t *)bitmap);
-
     /* Blit the block to the display. */
-    hagl_blit(display, rectangle->left, rectangle->top + 30, &block);
+    hagl_blit(device->surface, rectangle->left, rectangle->top + 30, &block);
 
     return 1;
 }
@@ -202,21 +211,23 @@ static uint16_t tjpgd_data_writer(JDEC* decoder, void* bitmap, JRECT* rectangle)
  */
 void mjpg_video_task(void *params)
 {
-    FILE *fp;
     uint8_t work[3100];
     JDEC decoder;
     JRESULT result;
 
-    fp = fopen("/sdcard/bbb08.mjp", "rb");
+    tjpgd_iodev_t device;
 
-    if (!fp) {
+    device.fp = fopen("/sdcard/bbb08.mjp", "rb");
+    device.surface = (const hagl_surface_t *) display;
+
+    if (!device.fp) {
         ESP_LOGE(TAG, "Unable to open file!");
     } else {
         ESP_LOGI(TAG, "Successfully opened file.");
     }
 
     while (1) {
-        result = jd_prepare(&decoder, tjpgd_data_reader, work, 3100, fp);
+        result = jd_prepare(&decoder, tjpgd_data_reader, work, 3100, (void *)&device);
         if (result == JDR_OK) {
             result = jd_decomp(&decoder, tjpgd_data_writer, 0);
             if (JDR_OK != result) {
