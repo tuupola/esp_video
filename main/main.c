@@ -46,15 +46,15 @@ SPDX-License-Identifier: MIT-0
 #include <bitmap.h>
 #include <font6x9.h>
 #include <fps.h>
-#include <bps.h>
+#include <aps.h>
 #include <sdcard.h>
 #include <tjpgd.h>
 
 static const char *TAG = "main";
 
-static float sd_fps;
-static float sd_bps;
-static bitmap_t *bb;
+static fps_instance_t fps;
+static aps_instance_t bps;
+static hagl_backend_t *display;
 
 static EventGroupHandle_t event;
 
@@ -76,7 +76,7 @@ void flush_task(void *params)
 
         /* Flush only when FRAME_LOADED is set. */
         if ((bits & FRAME_LOADED) != 0 ) {
-            hagl_flush();
+            hagl_flush(display);
         }
     }
 
@@ -86,8 +86,8 @@ void flush_task(void *params)
 /*
  * Read video data from sdcard. This should be capped to video
  * framerate. However currently the sd card is the bottleneck and
- * data can be read at only about 15 fps. Adding vsync causes
- * fps to drop to 14.
+ * data can be read at only about 12 fps. Adding vsync causes
+ * fps to drop to 11.
  */
 void raw_video_task(void *params)
 {
@@ -107,13 +107,13 @@ void raw_video_task(void *params)
         bytes_read = read(
             fileno(fp),
             /* Center the video on 320 * 240 display */
-            bb->buffer + bb->pitch * 30,
+            display->buffer + (display->width * (display->depth / 8)) * 30,
             320 * 180 * 2
         );
 
         /* Update counters. */
-        sd_bps = bps(bytes_read);
-        sd_fps = fps();
+        aps_update(&bps, bytes_read);
+        fps_update(&fps);
 
         /* Notify flush task that frame has been loaded. */
         xEventGroupSetBits(event, FRAME_LOADED);
@@ -142,7 +142,7 @@ static uint16_t tjpgd_data_reader(JDEC *decoder, uint8_t *buffer, uint16_t size)
         /* Read bytes from input stream. */
         bytes_read = read(fileno(fp), buffer, size);
 
-        sd_bps = bps(bytes_read);
+        aps_update(&bps, bytes_read);
 
         /* Search for EOI. */
         eoi_ptr = memmem(buffer, size, &EOI, 2);
@@ -190,7 +190,7 @@ static uint16_t tjpgd_data_writer(JDEC* decoder, void* bitmap, JRECT* rectangle)
     bitmap_init(&block, (uint8_t *)bitmap);
 
     /* Blit the block to the display. */
-    hagl_blit(rectangle->left, rectangle->top + 30, &block);
+    hagl_blit(display, rectangle->left, rectangle->top + 30, &block);
 
     return 1;
 }
@@ -227,7 +227,7 @@ void mjpg_video_task(void *params)
         }
 
         /* Update counters. */
-        sd_fps = fps();
+        fps_update(&fps);
 
         /* Notify flush task that frame has been loaded. */
         xEventGroupSetBits(event, FRAME_LOADED);
@@ -244,20 +244,20 @@ void mjpg_video_task(void *params)
  */
 void infobar_task(void *params)
 {
-    uint16_t color = hagl_color(0, 255, 0);
+    uint16_t color = hagl_color(display, 0, 255, 0);
     wchar_t message[64];
 
 #ifdef HAGL_HAL_USE_BUFFERING
     while (1) {
-        swprintf(message, sizeof(message), u"SD %.*f kBPS  ",  1, sd_bps / 1000);
-        hagl_put_text(message, 8, 8, color, font6x9);
+        swprintf(message, sizeof(message), u"SD %.*f kBPS  ",  1, bps.current / 1000);
+        hagl_put_text(display, message, 8, 8, color, font6x9);
 
 #ifdef CONFIG_ESP_VIDEO_MJPG
-        swprintf(message, sizeof(message), u"MJPG %.*f FPS  ", 1, sd_fps);
-        hagl_put_text(message, DISPLAY_WIDTH - 90, 8, color, font6x9);
+        swprintf(message, sizeof(message), u"MJPG %.*f FPS  ", 1, fps.current);
+        hagl_put_text(display, message, DISPLAY_WIDTH - 90, 8, color, font6x9);
 #else
-        swprintf(message, sizeof(message), u"RAW RGB565 %.*f FPS  ", 1, sd_fps);
-        hagl_put_text(message, DISPLAY_WIDTH - 124, 8, color, font6x9);
+        swprintf(message, sizeof(message), u"RAW RGB565 %.*f FPS  ", 1, fps.current);
+        hagl_put_text(display, message, DISPLAY_WIDTH - 124, 8, color, font6x9);
 #endif
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
@@ -269,22 +269,22 @@ void photo_task(void *params)
 {
     while (1) {
         ESP_LOGI(TAG, "Loading: %s", "/sdcard/001.jpg");
-        hagl_load_image(0, 30, "/sdcard/001.jpg");
+        hagl_load_image(display, 0, 30, "/sdcard/001.jpg");
         xEventGroupSetBits(event, FRAME_LOADED);
         vTaskDelay(1000 / portTICK_RATE_MS);
 
         ESP_LOGI(TAG, "Loading: %s", "/sdcard/002.jpg");
-        hagl_load_image(0, 30, "/sdcard/002.jpg");
+        hagl_load_image(display, 0, 30, "/sdcard/002.jpg");
         xEventGroupSetBits(event, FRAME_LOADED);
         vTaskDelay(1000 / portTICK_RATE_MS);
 
         ESP_LOGI(TAG, "Loading: %s", "/sdcard/003.jpg");
-        hagl_load_image(0, 30, "/sdcard/003.jpg");
+        hagl_load_image(display, 0, 30, "/sdcard/003.jpg");
         xEventGroupSetBits(event, FRAME_LOADED);
         vTaskDelay(1000 / portTICK_RATE_MS);
 
         ESP_LOGI(TAG, "Loading: %s", "/sdcard/004.jpg");
-        hagl_load_image(0, 30, "/sdcard/004.jpg");
+        hagl_load_image(display, 0, 30, "/sdcard/004.jpg");
         vTaskDelay(1000 / portTICK_RATE_MS);
     }
 }
@@ -294,12 +294,14 @@ void app_main()
     ESP_LOGI(TAG, "SDK version: %s", esp_get_idf_version());
     ESP_LOGI(TAG, "Heap when starting: %d", esp_get_free_heap_size());
 
+    fps_init(&fps);
+    aps_init(&bps);
+
     event = xEventGroupCreate();
 
-    /* Save the backbuffer pointer so we can later read() directly into it. */
-    bb = hagl_init();
-    if (bb) {
-        ESP_LOGI(TAG, "Back buffer: %dx%dx%d", bb->width, bb->height, bb->depth);
+    display = hagl_init();
+    if (display->buffer) {
+        ESP_LOGI(TAG, "Back buffer: %dx%dx%d", display->width, display->height, display->depth);
     }
 
     sdcard_init();
