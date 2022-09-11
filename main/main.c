@@ -192,11 +192,10 @@ static uint16_t tjpgd_data_writer(JDEC* decoder, void* bitmap, JRECT* rectangle)
     bitmap_t block = {
         .width = width,
         .height = height,
-        .depth = DISPLAY_DEPTH,
-        .pitch = width * (DISPLAY_DEPTH / 8),
-        .size =  width * (DISPLAY_DEPTH / 8) * height,
-        .buffer = (uint8_t *)bitmap
+        .depth = DISPLAY_DEPTH
     };
+
+    bitmap_init(&block, (uint8_t *)bitmap);
 
     /* Blit the block to the display. */
     hagl_blit(device->surface, rectangle->left, rectangle->top + 30, &block);
@@ -311,16 +310,19 @@ void app_main()
     event = xEventGroupCreate();
 
     display = hagl_init();
+
     if (display->buffer) {
         ESP_LOGI(TAG, "Back buffer: %dx%dx%d", display->width, display->height, display->depth);
     }
+
+    hagl_clear(display);
 
     sdcard_init();
 
     ESP_LOGI(TAG, "Heap after init: %d", esp_get_free_heap_size());
 
 #ifdef HAGL_HAL_USE_BUFFERING
-    xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(flush_task, "Flush", 8192, NULL, 1, NULL, 1);
 #ifdef CONFIG_ESP_VIDEO_MJPG
     xTaskCreatePinnedToCore(mjpg_video_task, "Video", 8192, NULL, 1, NULL, 0);
 #else
