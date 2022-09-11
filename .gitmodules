@@ -3,4 +3,4 @@
 	url = https://github.com/tuupola/hagl.git
 [submodule "components/hagl_hal"]
 	path = components/hagl_hal
-	url = git@github.com:tuupola/hagl_esp_mipi.git
+	url = https://github.com/tuupola/hagl_esp_mipi.git
